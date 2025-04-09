@@ -1,8 +1,8 @@
 /**
  * @file m5DialHA
  * @author D. K.
- * @brief M5Dial Home Assistant Reading and writing HA Entities. Starting alarm when armed and BT-Beacon Entity is over -130 dB
- * @version 0.1
+ * @brief M5Dial Home Assistant Reading and writing HA Entities via HA REST API. Starting alarm when armed and BT-Beacon Entity is over -130 dB
+ * @version 0.2
  * @date 2025-04-08
  *
  *
@@ -22,6 +22,11 @@ String sensorReadings;
 String lolaBeaconNotifyHAss = "";
 String lolaBeaconSignalDBHass = "";
 String serverName = "http://192.168.2.43:8123/api/states/input_number.bluecat_received_signal_strength";
+/*Definition of states
+OFF->Notify is off
+ON_GONE: Notify is on, kippy beacon not in range
+On_HOME: Notify is on, kippy beacon is in range
+*/
 enum State {
   OFF,
   ON_GONE,
@@ -123,15 +128,20 @@ void drawScreenWifi(String textline)
 String httpGETRequest(const char* serverName) {
   WiFiClient client;
   HTTPClient http;
-
-  http.begin(client, serverName);
+  String payload = "{}"; 
+  if(http.begin(client, serverName)==-1)
+  {
+    return payload;
+    http.end();
+  }
+    
   //add headers
   http.addHeader("Authorization", token);
   http.addHeader("Content-Type", "application/json");
   // Send HTTP POST request
   int httpResponseCode = http.GET();
 
-  String payload = "{}"; 
+  
   if (httpResponseCode>0) {
     payload = http.getString();
   }
@@ -144,7 +154,11 @@ int httpPostState(const char* serverName, String value) {
   WiFiClient client;
   HTTPClient http;
 
-  http.begin(client, serverName);
+  if(http.begin(client, serverName) == -1)
+    {
+        http.end();
+        return -1;
+    }
   //add headers
   http.addHeader("Authorization", token);
   http.addHeader("Content-Type", "application/json");
@@ -157,12 +171,12 @@ int httpPostState(const char* serverName, String value) {
 JSONVar getHAssEntityStateValue(const char* serverName)
 {
     sensorReadings = httpGETRequest(serverName);
-    JSONVar myObject = JSON.parse(sensorReadings);
-    if (JSON.typeof(myObject) == "undefined") 
+    JSONVar getResponseJSON = JSON.parse(sensorReadings);
+    if (JSON.typeof(getResponseJSON) == "undefined" or getResponseJSON.hasOwnProperty("state") == false) 
     {
-        return JSONVar("Parsing input failed!");;
+        return JSONVar("");
     }
-    JSONVar value = myObject["state"];
+    JSONVar value = getResponseJSON["state"];
     return value;
 }
 String getHAssEntityStateValueAsString(const char* serverName)
@@ -170,7 +184,8 @@ String getHAssEntityStateValueAsString(const char* serverName)
     String value_result = "";
     JSONVar value = getHAssEntityStateValue(serverName);
     value_result = JSON.stringify(value);
-    value_result = value_result.substring(1,value_result.length()-1);
+    if(value_result.length()>0)
+        value_result = value_result.substring(1,value_result.length()-1);
     return value_result;
 }
 void loop(){
@@ -199,16 +214,16 @@ void loop(){
     buttonPressed = M5Dial.BtnA.wasPressed();
 
     //******************
-    //execute state actions and determine next State
+    //execute state actions, determine next State and execute transition actions
     //******************
     switch(curState)
     {
         case OFF:
-                    drawScreenOff();
-                    if(buttonPressed)
+                    drawScreenOff(); //state action
+                    if(buttonPressed)                                                                                                     //If user presses button                      --> ON_GONE
                     {
                         nextState = ON_GONE;
-                        //TODO POST ON TO HA
+                        //Transition actions:
                         httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","on");
                         M5Dial.Display.clear();
                         drawScreenOffActivated();
@@ -218,32 +233,30 @@ void loop(){
                         nextState = OFF;
                     break;
         case ON_GONE:
-                    drawScreenOnGone();
-                    if(lolaBeaconSignalDBHass.toInt() > -130 && lolaBeaconSignalDBHass.toInt() < -60 && lolaBeaconNotifyHAss.equals("on"))
+                    drawScreenOnGone(); //state action
+                    if(lolaBeaconSignalDBHass.toInt() > -130 && lolaBeaconSignalDBHass.toInt() < -60 && lolaBeaconNotifyHAss.equals("on")) //If beacon is in range and notify is on         --> ON_HOME
                         nextState = ON_HOME;
-                    else if(lolaBeaconNotifyHAss.equals("on") == false)
+                    else if(lolaBeaconNotifyHAss.equals("on") == false)                                                                    //if notify is off                               --> OFF              
                         nextState = OFF;
-                    else if(lolaBeaconSignalDBHass.toInt() <= -130 && lolaBeaconNotifyHAss.equals("on"))
+                    else if(lolaBeaconSignalDBHass.toInt() <= -130 && lolaBeaconNotifyHAss.equals("on"))                                   //if beacon is not in range and notify is on     --> ON_GONE  (stay)                            
                         nextState = ON_GONE;
-                    if(buttonPressed)
+                    if(buttonPressed)                                                                                                      //if user presses button                         --> OFF
                     {
                         nextState = OFF;
-                        //TODO POST OFF to HA
                         httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
                     }
                     break;
         case ON_HOME:
-                    drawScreenOnHome();
-                    if(lolaBeaconSignalDBHass.toInt() > -130 && lolaBeaconNotifyHAss.equals("on"))
+                    drawScreenOnHome(); //state action
+                    if(lolaBeaconSignalDBHass.toInt() > -130 && lolaBeaconNotifyHAss.equals("on"))                                          //If beacon is in range and notify is on         --> ON_HOME (stay)                                       
                         nextState = ON_HOME;
-                    else if(lolaBeaconNotifyHAss.equals("on") == false)
+                    else if(lolaBeaconNotifyHAss.equals("on") == false)                                                                     //if notify is off                               --> OFF   
                         nextState = OFF;
-                    else if(lolaBeaconSignalDBHass.toInt() <= -130 && lolaBeaconNotifyHAss.equals("on"))
+                    else if(lolaBeaconSignalDBHass.toInt() <= -130 && lolaBeaconNotifyHAss.equals("on"))                                    //if beacon is not in range and notify is on     --> ON_GONE
                         nextState = ON_GONE;
-                    if(buttonPressed)
+                    if(buttonPressed)                                                                                                       //if user presses button                         --> OFF
                     {
                         nextState = OFF;
-                        //TODO POST OFF to HA
                         httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
                     }
                     break;
