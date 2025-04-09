@@ -37,10 +37,14 @@ enum State nextState = OFF;
 
 int i = 0;
 int soundCount = 0;
+int master_volume = 128;
+long encoder_oldPosition = -999;
 
 int status = 0;
 void setup() {
     auto cfg = M5.config();
+    Serial.begin(115200);
+    Serial.println("Setup complete");
     M5Dial.begin(cfg, true, false);
     M5Dial.Display.setTextColor(GREEN);
     M5Dial.Display.setTextDatum(middle_center);
@@ -57,7 +61,9 @@ void setup() {
     M5Dial.Display.drawString(std::to_string(status).c_str(),M5Dial.Display.width() / 2, M5Dial.Display.height() *1/ 4);
     M5Dial.Display.drawString(WiFi.localIP().toString().c_str(),M5Dial.Display.width() / 2, M5Dial.Display.height() *2 / 4);
     delay(2000);
+    M5Dial.Encoder.write(long(master_volume));
     M5Dial.Display.clear();
+    Serial.println("Setup complete");
 }
 
 void drawScreenOff(int statusCode){
@@ -84,27 +90,29 @@ void drawScreenOnGone()
 {
     M5Dial.Display.setTextColor(GREEN);
     M5Dial.Display.setTextSize(1);
-    M5Dial.Display.drawString("Notify", M5Dial.Display.width() / 2, M5Dial.Display.height() * 1 / 8);
+    M5Dial.Display.drawString("Notify", M5Dial.Display.width() / 2, M5Dial.Display.height() * 3 / 8);
     M5Dial.Display.drawString("Lola", M5Dial.Display.width() / 2, M5Dial.Display.height() * 5 / 8);
                             
     M5Dial.Display.setTextSize(0.8);
     M5Dial.Display.setTextColor(SILVER);
-    M5Dial.Display.drawString(lolaBeaconNotifyHAss, M5Dial.Display.width() / 2, M5Dial.Display.height() * 2 / 8);
+    M5Dial.Display.drawString(lolaBeaconNotifyHAss, M5Dial.Display.width() / 2, M5Dial.Display.height() * 4 / 8);
     M5Dial.Display.drawString(lolaBeaconSignalDBHass, M5Dial.Display.width() / 2,M5Dial.Display.height() * 6 / 8);
 }
 void drawScreenOnHome()
 {
     M5Dial.Display.setTextColor(GREEN);
     M5Dial.Display.setTextSize(1);
-    M5Dial.Display.drawString("Notify", M5Dial.Display.width() / 2, M5Dial.Display.height() * 1 / 8);
+    M5Dial.Display.drawString("Notify", M5Dial.Display.width() / 2, M5Dial.Display.height() * 3 / 8);
     M5Dial.Display.drawString("Lola", M5Dial.Display.width() / 2, M5Dial.Display.height() * 5 / 8);
                             
     M5Dial.Display.setTextSize(0.8);
     M5Dial.Display.setTextColor(SILVER);
-    M5Dial.Display.drawString(lolaBeaconNotifyHAss, M5Dial.Display.width() / 2, M5Dial.Display.height() * 2 / 8);
+    M5Dial.Display.drawString(lolaBeaconNotifyHAss, M5Dial.Display.width() / 2, M5Dial.Display.height() * 4 / 8);
     M5Dial.Display.drawString(lolaBeaconSignalDBHass, M5Dial.Display.width() / 2,M5Dial.Display.height() * 6 / 8);
     if(soundCount++ % 200 == 0)
     {
+    //M5Dial.Display.fillArc(M5Dial.Display.width() / 2,M5Dial.Display.height()/2, 10, 20, 20, 240, TFT_WHITE);
+    M5Dial.Display.fillArc(M5Dial.Display.width() / 2,M5Dial.Display.height()/2, 100, 250, 0, 360, TFT_WHITE);
     M5Dial.Speaker.tone(2000, 150);
     delay(150);
     M5Dial.Speaker.tone(2500, 150);
@@ -129,10 +137,12 @@ String httpGETRequest(const char* serverName) {
   WiFiClient client;
   HTTPClient http;
   String payload = "{}"; 
+  //Serial.println("httpGETRequest Start");
   if(http.begin(client, serverName)==-1)
   {
+    //Serial.println("httpGETRequest failed.");
+    //http.end();
     return payload;
-    http.end();
   }
     
   //add headers
@@ -148,15 +158,18 @@ String httpGETRequest(const char* serverName) {
 
   // Free resources
   http.end();
+  //Serial.println("httpGETRequest End: Payload:");
+  //Serial.println(payload);
   return payload;
 }
 int httpPostState(const char* serverName, String value) {
   WiFiClient client;
   HTTPClient http;
-
+  //Serial.println("httpPostState Start");
   if(http.begin(client, serverName) == -1)
     {
-        http.end();
+        //http.end();
+        //Serial.println("httpPost failed.");
         return -1;
     }
   //add headers
@@ -166,26 +179,40 @@ int httpPostState(const char* serverName, String value) {
   String data = "{\"state\": \"" + value + "\"}";
   int httpResponseCode = http.POST(data);
   http.end();
+  //Serial.println("httpPostState End");
+  //Serial.println(httpResponseCode);
   return httpResponseCode;
 }
-JSONVar getHAssEntityStateValue(const char* serverName)
+String getHAssEntityStateValue(const char* serverName)
 {
+    //Serial.println("getHAssEntityStateValue Start");
     sensorReadings = httpGETRequest(serverName);
+    //Serial.println(sensorReadings);
     JSONVar getResponseJSON = JSON.parse(sensorReadings);
     if (JSON.typeof(getResponseJSON) == "undefined" or getResponseJSON.hasOwnProperty("state") == false) 
     {
+        //Serial.print("getHAssEntityStateValue: undefined or not matching input: ");
+        //Serial.println(getResponseJSON);
         return JSONVar("");
     }
     JSONVar value = getResponseJSON["state"];
-    return value;
+    String value_s = JSON.stringify(value);
+    //Serial.println("getHAssEntityStateValue End");
+    return value_s;
 }
 String getHAssEntityStateValueAsString(const char* serverName)
 {
+    //Serial.println("getHAssEntityStateValueAsString Start");
     String value_result = "";
-    JSONVar value = getHAssEntityStateValue(serverName);
-    value_result = JSON.stringify(value);
+    value_result = getHAssEntityStateValue(serverName);
+    //value_result = JSON.stringify(value);
+    //Serial.println("getHAssEntityStateValueAsString Middle Stringify:");
+    //Serial.println(value_result);
+
     if(value_result.length()>0)
+        //Serial.println("getHAssEntityStateValueAsString if condition");
         value_result = value_result.substring(1,value_result.length()-1);
+    //Serial.println("getHAssEntityStateValueAsString End");
     return value_result;
 }
 void loop(){
@@ -266,4 +293,29 @@ void loop(){
     if(nextState != curState)
         M5Dial.Display.clear();
     curState = nextState;
+    long encoder_newPosition = M5Dial.Encoder.read();
+    if(encoder_newPosition != encoder_oldPosition)
+    {    
+        if(encoder_newPosition < 0)
+        {
+            M5Dial.Encoder.write(0);
+            encoder_newPosition = 0;
+        }
+        if(encoder_newPosition > 128)
+        {
+            M5Dial.Encoder.write(128);
+            encoder_newPosition = 128;
+        }
+        master_volume = int(encoder_newPosition) % 129;
+        M5Dial.Display.clear();
+        M5Dial.Speaker.setVolume(master_volume);
+        M5Dial.Display.fillArc(M5Dial.Display.width() / 2,M5Dial.Display.height()/2, 90, 100, 0.0, 1.0*float(master_volume)/256.0*360.0, TFT_ORANGE);
+        M5Dial.Display.setTextColor(TFT_ORANGE);
+        M5Dial.Display.setTextSize(0.4);
+        M5Dial.Display.drawString("Volume", M5Dial.Display.width() / 2,M5Dial.Display.height() / 10 *2);
+        encoder_oldPosition = encoder_newPosition;
+        //delay(200);
+        //Serial.println(String(master_volume) + " " + String(encoder_newPosition));
+        
+    }
 }
