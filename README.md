@@ -8,7 +8,7 @@ From M5Dial set button value in Home Assistant and poll sensor value that can tr
 
 # Additional Information
 * Home Assistant REST API: https://developers.home-assistant.io/docs/api/rest/
-* Code snippit http-POST to Home Assistant REST API:
+* Code snippet http-POST to Home Assistant REST API:
 ~~~
 #include "M5Dial.h"
 #include <WiFi.h>
@@ -35,7 +35,7 @@ int httpPostState(const char* serverName, String value) {
 }
 httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","on");
 ~~~
-* Code snippit http-GET from Home Assistant REST API:
+* Code snippet http-GET from Home Assistant REST API:
 ~~~
 #include "M5Dial.h"
 #include <WiFi.h>
