@@ -132,6 +132,15 @@ void drawScreenWifi(String textline)
     M5Dial.Display.setTextColor(SILVER);
     M5Dial.Display.drawString(textline.c_str(),M5Dial.Display.width() / 2, M5Dial.Display.height() *3 / 4);
 }
+void drawPopupScreenVolume()
+{
+    M5Dial.Display.clear();
+    M5Dial.Speaker.setVolume(master_volume);
+    M5Dial.Display.fillArc(M5Dial.Display.width() / 2,M5Dial.Display.height()/2, 90, 100, 0.0, 1.0*float(master_volume)/256.0*360.0, TFT_ORANGE);
+    M5Dial.Display.setTextColor(TFT_ORANGE);
+    M5Dial.Display.setTextSize(0.4);
+    M5Dial.Display.drawString("Volume", M5Dial.Display.width() / 2,M5Dial.Display.height() / 10 *2);
+}
 
 String httpGETRequest(const char* serverName) {
   WiFiClient client;
@@ -158,14 +167,12 @@ String httpGETRequest(const char* serverName) {
 
   // Free resources
   http.end();
-  //Serial.println("httpGETRequest End: Payload:");
-  //Serial.println(payload);
+
   return payload;
 }
 int httpPostState(const char* serverName, String value) {
   WiFiClient client;
   HTTPClient http;
-  //Serial.println("httpPostState Start");
   if(http.begin(client, serverName) == -1)
     {
         //http.end();
@@ -179,40 +186,27 @@ int httpPostState(const char* serverName, String value) {
   String data = "{\"state\": \"" + value + "\"}";
   int httpResponseCode = http.POST(data);
   http.end();
-  //Serial.println("httpPostState End");
-  //Serial.println(httpResponseCode);
   return httpResponseCode;
 }
 String getHAssEntityStateValue(const char* serverName)
 {
-    //Serial.println("getHAssEntityStateValue Start");
     sensorReadings = httpGETRequest(serverName);
-    //Serial.println(sensorReadings);
     JSONVar getResponseJSON = JSON.parse(sensorReadings);
     if (JSON.typeof(getResponseJSON) == "undefined" or getResponseJSON.hasOwnProperty("state") == false) 
     {
-        //Serial.print("getHAssEntityStateValue: undefined or not matching input: ");
-        //Serial.println(getResponseJSON);
-        return JSONVar("");
+        return "";
     }
     JSONVar value = getResponseJSON["state"];
     String value_s = JSON.stringify(value);
-    //Serial.println("getHAssEntityStateValue End");
     return value_s;
 }
 String getHAssEntityStateValueAsString(const char* serverName)
 {
-    //Serial.println("getHAssEntityStateValueAsString Start");
     String value_result = "";
     value_result = getHAssEntityStateValue(serverName);
-    //value_result = JSON.stringify(value);
-    //Serial.println("getHAssEntityStateValueAsString Middle Stringify:");
-    //Serial.println(value_result);
 
     if(value_result.length()>0)
-        //Serial.println("getHAssEntityStateValueAsString if condition");
         value_result = value_result.substring(1,value_result.length()-1);
-    //Serial.println("getHAssEntityStateValueAsString End");
     return value_result;
 }
 void loop(){
@@ -293,29 +287,26 @@ void loop(){
     if(nextState != curState)
         M5Dial.Display.clear();
     curState = nextState;
+
+
+    //******************
+    //2nd Task: Create Popup for alarm volume on user interaction via dial
+    //******************
     long encoder_newPosition = M5Dial.Encoder.read();
-    if(encoder_newPosition != encoder_oldPosition)
+    if(encoder_newPosition != encoder_oldPosition)  //dial has been turned
     {    
-        if(encoder_newPosition < 0)
+        if(encoder_newPosition < 0) //dial left turn
         {
             M5Dial.Encoder.write(0);
             encoder_newPosition = 0;
         }
-        if(encoder_newPosition > 128)
+        if(encoder_newPosition > 128) //dial right turn
         {
             M5Dial.Encoder.write(128);
             encoder_newPosition = 128;
         }
         master_volume = int(encoder_newPosition) % 129;
-        M5Dial.Display.clear();
-        M5Dial.Speaker.setVolume(master_volume);
-        M5Dial.Display.fillArc(M5Dial.Display.width() / 2,M5Dial.Display.height()/2, 90, 100, 0.0, 1.0*float(master_volume)/256.0*360.0, TFT_ORANGE);
-        M5Dial.Display.setTextColor(TFT_ORANGE);
-        M5Dial.Display.setTextSize(0.4);
-        M5Dial.Display.drawString("Volume", M5Dial.Display.width() / 2,M5Dial.Display.height() / 10 *2);
         encoder_oldPosition = encoder_newPosition;
-        //delay(200);
-        //Serial.println(String(master_volume) + " " + String(encoder_newPosition));
-        
+        drawPopupScreenVolume();
     }
 }
