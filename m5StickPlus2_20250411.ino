@@ -37,8 +37,9 @@ enum State nextState = OFF;
 
 int i = 0;
 int soundCount = 0;
-int master_volume = 128;
-long encoder_oldPosition = -999;
+int master_volume = 120;
+//long encoder_oldPosition = -999;
+int battery = 0;
 
 int status = 0;
 void setup() {
@@ -144,12 +145,14 @@ void drawPopupScreenVolume()
 }
 void drawBattery()
 {
-    StickCP2.Display.setTextColor(DARKGREEN);
-    StickCP2.Display.setTextSize(0.5);
+    StickCP2.Display.setTextColor(YELLOW);
+    StickCP2.Display.setTextSize(0.7);
     int lvl = StickCP2.Power.getBatteryLevel();
-    StickCP2.Display.setCursor(10, 30);
-    StickCP2.Display.printf("BAT: %d", lvl);
-    StickCP2.Display.printf("%");
+
+    StickCP2.Display.setCursor(5, 8);
+    StickCP2.Display.printf("BAT: %d", (lvl+battery)/2);
+    battery = lvl;
+    //StickCP2.Display.printf("%");
 }
 
 String httpGETRequest(const char* serverName) {
@@ -220,8 +223,8 @@ String getHAssEntityStateValueAsString(const char* serverName)
     return value_result;
 }
 void loop(){
-    int statusCode = 0;
     StickCP2.update();
+    int statusCode = 0;
     bool buttonAPressed = false;
     bool buttonBPressed = false;
     String wifiLine = "";
@@ -242,6 +245,7 @@ void loop(){
         }
         lastTime = millis();
         StickCP2.Display.clear();
+        drawBattery();
     }
     buttonAPressed = StickCP2.BtnA.wasPressed();
     buttonBPressed = StickCP2.BtnB.wasPressed();
@@ -259,6 +263,7 @@ void loop(){
                         //Transition actions:
                         httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","on");
                         StickCP2.Display.clear();
+                        //drawBattery();
                         drawScreenOffActivated();
                         delay(2000);
                     }
@@ -298,7 +303,9 @@ void loop(){
     }
     if(nextState != curState)
         StickCP2.Display.clear();
+        //drawBattery();
     curState = nextState;
+    //elay(100);
 
 
     //******************
@@ -308,8 +315,8 @@ void loop(){
     if(buttonBPressed)  //button B has been pressed
     {    
         master_volume += 20;
-        master_volume = master_volume % 141;
+        master_volume = master_volume % 161;
         drawPopupScreenVolume();
     }
-    drawBattery();
+    
 }
