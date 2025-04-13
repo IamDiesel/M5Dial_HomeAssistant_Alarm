@@ -47,6 +47,7 @@ void setup() {
     Serial.begin(115200);
     Serial.println("Setup complete");
     StickCP2.begin(cfg);
+    StickCP2.Power.begin();
     StickCP2.Display.setRotation(1);
     StickCP2.Display.setTextColor(GREEN);
     StickCP2.Display.setTextDatum(middle_center);
@@ -75,17 +76,21 @@ void drawScreenOff(int statusCode){
     StickCP2.Display.drawString(std::to_string(statusCode).c_str(),StickCP2.Display.width() / 2, StickCP2.Display.height() * 5 / 8);   
 }
 void drawScreenOff(){
-    StickCP2.Display.setTextColor(GREEN);
+    StickCP2.Display.setTextColor(DARKGREY);
     StickCP2.Display.setTextSize(1);
-    StickCP2.Display.drawString("Notify\n[Off]", StickCP2.Display.width() / 2,StickCP2.Display.height() / 2);
-    StickCP2.Display.setTextSize(0.5);
-    StickCP2.Display.drawString("Press BTN to Activate",StickCP2.Display.width() / 2, StickCP2.Display.height() * 5 / 8);   
+    StickCP2.Display.drawString("Notify [Off]", StickCP2.Display.width() / 2,StickCP2.Display.height() / 2-20);
+    StickCP2.Display.setTextSize(0.7);
+    StickCP2.Display.setTextColor(BLUE);
+    StickCP2.Display.drawString("Press M5 to activate",StickCP2.Display.width() / 2, StickCP2.Display.height() * 5 / 8-5);
+    StickCP2.Display.setTextColor(DARKGREY);
+    StickCP2.Display.drawString(lolaBeaconSignalDBHass+" dB", StickCP2.Display.width() / 2,StickCP2.Display.height() * 6 / 8);
 }
 void drawScreenOffActivated(){
     StickCP2.Display.setTextColor(GREEN);
     StickCP2.Display.setTextSize(1);
-    StickCP2.Display.drawString("Notify\n[Off]", StickCP2.Display.width() / 2,StickCP2.Display.height() / 2);
-    StickCP2.Display.setTextSize(0.5);
+    StickCP2.Display.drawString("Notify [Off]", StickCP2.Display.width() / 2,StickCP2.Display.height() / 2-20);
+    StickCP2.Display.setTextSize(0.7);
+    StickCP2.Display.setTextColor(GREEN);
     StickCP2.Display.drawString("activating...",StickCP2.Display.width() / 2, StickCP2.Display.height() * 5 / 8);   
 }
 void drawScreenOnGone()
@@ -98,7 +103,7 @@ void drawScreenOnGone()
     StickCP2.Display.setTextSize(0.8);
     StickCP2.Display.setTextColor(SILVER);
     StickCP2.Display.drawString(lolaBeaconNotifyHAss, StickCP2.Display.width() / 2, StickCP2.Display.height() * 4 / 8);
-    StickCP2.Display.drawString(lolaBeaconSignalDBHass, StickCP2.Display.width() / 2,StickCP2.Display.height() * 6 / 8);
+    StickCP2.Display.drawString(lolaBeaconSignalDBHass+" dB", StickCP2.Display.width() / 2,StickCP2.Display.height() * 6 / 8);
 }
 void drawScreenOnHome()
 {
@@ -110,9 +115,11 @@ void drawScreenOnHome()
     StickCP2.Display.setTextSize(0.8);
     StickCP2.Display.setTextColor(SILVER);
     StickCP2.Display.drawString(lolaBeaconNotifyHAss, StickCP2.Display.width() / 2, StickCP2.Display.height() * 4 / 8);
-    StickCP2.Display.drawString(lolaBeaconSignalDBHass, StickCP2.Display.width() / 2,StickCP2.Display.height() * 6 / 8);
+    StickCP2.Display.drawString(lolaBeaconSignalDBHass+" dB", StickCP2.Display.width() / 2,StickCP2.Display.height() * 6 / 8);
+    
     if(soundCount++ % 200 == 0)
     {
+    StickCP2.Power.setLed(255);
     //StickCP2.Display.fillArc(StickCP2.Display.width() / 2,StickCP2.Display.height()/2, 10, 20, 20, 240, TFT_WHITE);
     StickCP2.Display.fillArc(StickCP2.Display.width() / 2,StickCP2.Display.height()/2, 100, 250, 0, 360, TFT_WHITE);
     StickCP2.Speaker.tone(2000, 150);
@@ -121,6 +128,10 @@ void drawScreenOnHome()
     delay(150);
     StickCP2.Speaker.tone(2000, 150);
     delay(150); 
+    }
+    else
+    {
+        StickCP2.Power.setLed(0);
     }
   
 }
@@ -149,10 +160,26 @@ void drawBattery()
     StickCP2.Display.setTextSize(0.7);
     int lvl = StickCP2.Power.getBatteryLevel();
 
-    StickCP2.Display.setCursor(5, 8);
+    StickCP2.Display.setCursor(5, 12);
     StickCP2.Display.printf("BAT: %d", (lvl+battery)/2);
     battery = lvl;
     //StickCP2.Display.printf("%");
+}
+void empty_battery_notification()
+{
+    static unsigned long last_battery_beep = 0;
+    if(battery <= 5 && curState != ON_HOME)
+    {
+        StickCP2.Power.setLed(125);
+        if (battery < 2 && (millis() - last_battery_beep) > 10000)
+        {
+            last_battery_beep = millis();
+            StickCP2.Speaker.tone(1000, 500);
+        }
+    }
+    else
+        StickCP2.Power.setLed(0);
+
 }
 
 String httpGETRequest(const char* serverName) {
@@ -288,14 +315,21 @@ void loop(){
                     drawScreenOnHome(); //state action
                     if(lolaBeaconSignalDBHass.toInt() > -130 && lolaBeaconNotifyHAss.equals("on"))                                          //If beacon is in range and notify is on         --> ON_HOME (stay)                                       
                         nextState = ON_HOME;
-                    else if(lolaBeaconNotifyHAss.equals("on") == false)                                                                     //if notify is off                               --> OFF   
+                    else if(lolaBeaconNotifyHAss.equals("on") == false)                                                                     //if notify is off                               --> OFF
+                    {
                         nextState = OFF;
+                        StickCP2.Power.setLed(0);
+                    }
                     else if(lolaBeaconSignalDBHass.toInt() <= -130 && lolaBeaconNotifyHAss.equals("on"))                                    //if beacon is not in range and notify is on     --> ON_GONE
+                    {
                         nextState = ON_GONE;
+                        StickCP2.Power.setLed(0);
+                    }
                     if(buttonAPressed)                                                                                                       //if user presses button                         --> OFF
                     {
                         nextState = OFF;
                         httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
+                        StickCP2.Power.setLed(0);
                     }
                     break;
         default:
@@ -318,5 +352,7 @@ void loop(){
         master_volume = master_volume % 161;
         drawPopupScreenVolume();
     }
+    //check if battery is nearly empty and activate power LED / beep, if thats the case
+    empty_battery_notification();
     
 }
