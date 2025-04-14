@@ -1,5 +1,7 @@
-# M5Dial_HomeAssistant_Alarm
-From M5Dial set button value in Home Assistant and poll sensor value that can trigger an alarm on the M5Dial
+# M5Dial / M5StickCPlus2 HomeAssistant Alarm
+From M5Dial M5Stick set button value in Home Assistant and poll sensor value that can trigger an alarm on the M5Dial
+![image](https://github.com/user-attachments/assets/246e2db2-0dcd-4b51-96d4-f6f72a8777fc)
+
 ![WhatsApp Bild 2025-04-09 um 15 16 25_37731e9d](https://github.com/user-attachments/assets/abb95c94-26bb-4f0d-86e1-3fab8fa2de3c)
 ![WhatsApp Bild 2025-04-09 um 15 16 25_30c7c64c](https://github.com/user-attachments/assets/b2aedcb1-fc76-4a0d-afb6-08681e1fb32b)
 
