@@ -40,6 +40,7 @@ int soundCount = 0;
 int master_volume = 120;
 //long encoder_oldPosition = -999;
 int battery = 0;
+bool settingDisplayIsBright = true;
 
 int status = 0;
 void setup() {
@@ -98,7 +99,7 @@ void drawScreenOnGone()
     StickCP2.Display.setTextColor(GREEN);
     StickCP2.Display.setTextSize(1);
     StickCP2.Display.drawString("Notify", StickCP2.Display.width() / 2, StickCP2.Display.height() * 3 / 8);
-    StickCP2.Display.drawString("Lola", StickCP2.Display.width() / 2, StickCP2.Display.height() * 5 / 8);
+    StickCP2.Display.drawString("Lola Beacon:", StickCP2.Display.width() / 2, StickCP2.Display.height() * 5 / 8);
                             
     StickCP2.Display.setTextSize(0.8);
     StickCP2.Display.setTextColor(SILVER);
@@ -110,7 +111,7 @@ void drawScreenOnHome()
     StickCP2.Display.setTextColor(GREEN);
     StickCP2.Display.setTextSize(1);
     StickCP2.Display.drawString("Notify", StickCP2.Display.width() / 2, StickCP2.Display.height() * 3 / 8);
-    StickCP2.Display.drawString("Lola", StickCP2.Display.width() / 2, StickCP2.Display.height() * 5 / 8);
+    StickCP2.Display.drawString("Lola Beacon", StickCP2.Display.width() / 2, StickCP2.Display.height() * 5 / 8);
                             
     StickCP2.Display.setTextSize(0.8);
     StickCP2.Display.setTextColor(SILVER);
@@ -154,6 +155,7 @@ void drawPopupScreenVolume()
     StickCP2.Display.setTextSize(0.4);
     StickCP2.Display.drawString("Volume", StickCP2.Display.width() / 2,StickCP2.Display.height() / 10 *2);
 }
+
 void drawBattery()
 {
     StickCP2.Display.setTextColor(YELLOW);
@@ -179,7 +181,10 @@ void empty_battery_notification()
     }
     else
         StickCP2.Power.setLed(0);
-
+}
+void drawInfoBar()
+{
+    drawBattery();
 }
 
 String httpGETRequest(const char* serverName) {
@@ -254,6 +259,12 @@ void loop(){
     int statusCode = 0;
     bool buttonAPressed = false;
     bool buttonBPressed = false;
+    bool buttonPPressed = false;
+    bool buttonAHold = false;
+    bool buttonBHold = false;
+    bool buttonAReleased = false;
+    bool buttonBReleased = false;
+    bool buttonPReleased = false;
     String wifiLine = "";
     //******************
     //update inputs
@@ -274,8 +285,13 @@ void loop(){
         StickCP2.Display.clear();
         drawBattery();
     }
-    buttonAPressed = StickCP2.BtnA.wasPressed();
-    buttonBPressed = StickCP2.BtnB.wasPressed();
+    buttonAPressed = StickCP2.BtnA.wasClicked();
+    buttonBPressed = StickCP2.BtnB.wasClicked();
+    //buttonPPressed = StickCP2.BtnPWR.wasSingleClicked();
+    
+    buttonAHold = StickCP2.BtnA.wasHold();
+    buttonBHold = StickCP2.BtnB.wasHold();
+    //buttonAReleased = StickCP2.BtnA.was
 
     //******************
     //execute state actions, determine next State and execute transition actions
@@ -346,11 +362,27 @@ void loop(){
     //2nd Task: Create Popup for alarm volume on user interaction via dial
     //******************
     //long encoder_newPosition = StickCP2.Encoder.read();
-    if(buttonBPressed)  //button B has been pressed
-    {    
-        master_volume += 20;
-        master_volume = master_volume % 161;
+    if(buttonBPressed && buttonBHold == false)  //button B has been pressed
+    {
+        if(StickCP2.BtnB.getClickCount() > 1)
+        {
+            master_volume += 20;
+            master_volume = master_volume % 161;
+        }  
         drawPopupScreenVolume();
+    }
+    if(buttonBHold == true)
+    {
+        if(settingDisplayIsBright)
+            StickCP2.Display.setBrightness(0);
+        else
+            StickCP2.Display.setBrightness(255);
+        settingDisplayIsBright = !settingDisplayIsBright;
+    }
+    if(buttonAPressed || buttonBPressed || curState == ON_HOME)
+    {
+        StickCP2.Display.setBrightness(255);
+        settingDisplayIsBright = true;
     }
     //check if battery is nearly empty and activate power LED / beep, if thats the case
     empty_battery_notification();
