@@ -23,17 +23,19 @@ String lolaBeaconNotifyHAss = "";
 String lolaBeaconSignalDBHass = "";
 String serverName = "http://192.168.2.43:8123/api/states/input_number.bluecat_received_signal_strength";
 /*Definition of states
-OFF->Notify is off
+OFF_NO_ALARM->Notify is off
 ON_GONE: Notify is on, kippy beacon not in range
 On_HOME: Notify is on, kippy beacon is in range
 */
 enum State {
-  OFF,
+  OFF_NO_ALARM,
   ON_GONE,
-  ON_HOME
+  ON_HOME,
+  OFF_DISPLAY
 };
-enum State curState = OFF;
-enum State nextState = OFF;
+enum State curState = OFF_NO_ALARM;
+enum State nextState = OFF_NO_ALARM;
+enum State restoreState = OFF_NO_ALARM;
 
 int i = 0;
 int soundCount = 0;
@@ -298,7 +300,7 @@ void loop(){
     //******************
     switch(curState)
     {
-        case OFF:
+        case OFF_NO_ALARM:
                     drawScreenOff(); //state action
                     if(buttonAPressed)                                                                                                     //If user presses button                      --> ON_GONE
                     {
@@ -311,29 +313,42 @@ void loop(){
                         delay(2000);
                     }
                     else
-                        nextState = OFF;
+                        nextState = OFF_NO_ALARM;
+                    if(buttonBHold == true)
+                    {
+                        nextState = OFF_DISPLAY;
+                        restoreState = OFF_NO_ALARM;
+                        StickCP2.Display.setBrightness(0);
+                    }
+                        
                     break;
         case ON_GONE:
                     drawScreenOnGone(); //state action
                     if(lolaBeaconSignalDBHass.toInt() > -130 && lolaBeaconSignalDBHass.toInt() < -60 && lolaBeaconNotifyHAss.equals("on")) //If beacon is in range and notify is on         --> ON_HOME
                         nextState = ON_HOME;
-                    else if(lolaBeaconNotifyHAss.equals("on") == false)                                                                    //if notify is off                               --> OFF              
-                        nextState = OFF;
+                    else if(lolaBeaconNotifyHAss.equals("on") == false)                                                                    //if notify is off                               --> OFF_NO_ALARM              
+                        nextState = OFF_NO_ALARM;
                     else if(lolaBeaconSignalDBHass.toInt() <= -130 && lolaBeaconNotifyHAss.equals("on"))                                   //if beacon is not in range and notify is on     --> ON_GONE  (stay)                            
                         nextState = ON_GONE;
-                    if(buttonAPressed)                                                                                                      //if user presses button                         --> OFF
+                    if(buttonAPressed)                                                                                                      //if user presses button                         --> OFF_NO_ALARM
                     {
-                        nextState = OFF;
+                        nextState = OFF_NO_ALARM;
                         httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
+                    }
+                    if(buttonBHold == true)
+                    {
+                        nextState = OFF_DISPLAY;
+                        restoreState = ON_GONE;
+                        StickCP2.Display.setBrightness(0);
                     }
                     break;
         case ON_HOME:
                     drawScreenOnHome(); //state action
                     if(lolaBeaconSignalDBHass.toInt() > -130 && lolaBeaconNotifyHAss.equals("on"))                                          //If beacon is in range and notify is on         --> ON_HOME (stay)                                       
                         nextState = ON_HOME;
-                    else if(lolaBeaconNotifyHAss.equals("on") == false)                                                                     //if notify is off                               --> OFF
+                    else if(lolaBeaconNotifyHAss.equals("on") == false)                                                                     //if notify is off                               --> OFF_NO_ALARM
                     {
-                        nextState = OFF;
+                        nextState = OFF_NO_ALARM;
                         StickCP2.Power.setLed(0);
                     }
                     else if(lolaBeaconSignalDBHass.toInt() <= -130 && lolaBeaconNotifyHAss.equals("on"))                                    //if beacon is not in range and notify is on     --> ON_GONE
@@ -341,11 +356,31 @@ void loop(){
                         nextState = ON_GONE;
                         StickCP2.Power.setLed(0);
                     }
-                    if(buttonAPressed)                                                                                                       //if user presses button                         --> OFF
+                    if(buttonAPressed)                                                                                                       //if user presses button                         --> OFF_NO_ALARM
                     {
-                        nextState = OFF;
+                        nextState = OFF_NO_ALARM;
                         httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
                         StickCP2.Power.setLed(0);
+                    }
+                    if(buttonBHold == true)
+                    {
+                        nextState = OFF_DISPLAY;
+                        restoreState = ON_HOME;
+                        StickCP2.Display.setBrightness(0);
+                    }
+                    break;
+        case OFF_DISPLAY:
+                    nextState = OFF_DISPLAY;
+                    if(buttonBHold || buttonBPressed || buttonAPressed)
+                    {
+                        nextState = restoreState;
+                        StickCP2.Display.setBrightness(255);
+                    }
+                        
+                    if((restoreState == ON_GONE || restoreState == ON_HOME) && lolaBeaconSignalDBHass.toInt() > -130)
+                    {
+                        nextState = ON_HOME;
+                        StickCP2.Display.setBrightness(255);
                     }
                     break;
         default:
@@ -371,7 +406,7 @@ void loop(){
         }  
         drawPopupScreenVolume();
     }
-    if(buttonBHold == true)
+    /*if(buttonBHold == true)
     {
         if(settingDisplayIsBright)
             StickCP2.Display.setBrightness(0);
@@ -383,7 +418,7 @@ void loop(){
     {
         StickCP2.Display.setBrightness(255);
         settingDisplayIsBright = true;
-    }
+    }*/
     //check if battery is nearly empty and activate power LED / beep, if thats the case
     empty_battery_notification();
     
