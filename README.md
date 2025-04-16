@@ -85,7 +85,7 @@ int lolaBeaconSignalDB = int(value);
 3) Install  "Every Proxy" app on android phone
 4) Create Hotspot on android phone: In this example "LolaNet" with "yourWifiPassword"
 5) Start twingate on the android phone, sign in and connect to home network
-6) Start "Every Proxy" app. Inside the app start the HTTP-Server. In this example the Proxy is hosted on: 192.168.192.3, port 8080
+6) Start "Every Proxy" app on the android phone. Inside the app start the HTTP-Server. In this example the Proxy is hosted on: 192.168.192.3, port 8080
 7) Code Snippet on how to GET and POST remotly from M5Dial/M5StickC via android hotspot to your home network Home Assistant using the Home Assistant REST API:
 ~~~
 #include <WiFi.h>
