@@ -79,4 +79,106 @@ JSONVar myObject = JSON.parse(sensorReadings);
 JSONVar value = myObject["state"];
 int lolaBeaconSignalDB = int(value);
 ~~~
+* How to use twingate on a mobile phone as proxy to connect the M5 Dial/StickC to Home Assistant from outside the home network
+1) Install twingate e.g. via docker on a device in the home network (where home assistant is running) and setup a twingate connector. More information see https://www.twingate.com/
+2) Install "Twingate" app on android phone
+3) Install  "Every Proxy" app on android phone
+4) Create Hotspot on android phone: In this example "LolaNet" with "yourWifiPassword"
+5) Start twingate on the android phone, sign in and connect to home network
+6) Start "Every Proxy" app. Inside the app start the HTTP-Server. In this example the Proxy is hosted on: 192.168.192.3, port 8080
+7) Code Snippet on how to GET and POST remotly from M5Dial/M5StickC via android hotspot to your home network Home Assistant using the Home Assistant REST API:
+~~~
+#include <WiFi.h>
+#include <HTTPClient.h>
+const char* ssid = "LolaNet";
+const char* password = "yourWifiPassword";
+bool useProxy = true;
+WiFi.begin(ssid, password);
+while(WiFi.status() != WL_CONNECTED) 
+{
+    delay(500);
+    M5Dial.Display.drawString(".",M5Dial.Display.width() / 3+(i++*5),M5Dial.Display.height() *1/2);
+}
+//GET Request
+//serverName could be: serverName = http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active;
+//Where 192.168.2.43 is the Home Assistant server
+String httpGETRequest(String serverName) {
+  WiFiClient client;
+  HTTPClient http;
+  String payload = "{}"; 
+  proxyServer = "192.168.192.3";
+  int proxyPort = 8080;
 
+  if(useProxy)
+  {
+        http.setRedirectLimit(5);
+
+        //if(http.begin(client, proxyServerName+newServerName)==-1)
+        if(http.begin(client, proxyServer, port, serverName, true)==-1)
+            return payload;
+        //http.setURL(serverName);
+  }
+  else
+  {
+      if(http.begin(client, serverName)==-1)
+        {
+            //Serial.println("httpGETRequest failed.");
+            //http.end();
+            return payload;
+        }
+  }
+   
+  //add headers
+  http.addHeader("Authorization", token);
+  http.addHeader("Content-Type", "application/json");
+  // Send HTTP POST request
+  int httpResponseCode = http.GET();
+
+  
+  if (httpResponseCode>0) {
+    payload = http.getString();
+  }
+
+  // Free resources
+  http.end();
+  return payload;
+}
+
+//POST Request
+int httpPostState(String serverName, String value) {
+  WiFiClient client;
+  HTTPClient http;
+  String proxyServer = "192.168.192.3";
+  int proxyPort = 8080;
+
+    if(useProxy)
+    {
+        if(http.begin(client, proxyServer, proxyPort, serverName, true)==-1)
+        {
+            //http.end();
+            //Serial.println("httpPost failed.");
+            return -1;
+        }
+        //http.setURL(serverName);
+    }
+    else
+    {
+        if(http.begin(client, serverName) == -1)
+        {
+            //http.end();
+            //Serial.println("httpPost failed.");
+            return -1;
+        }
+    }
+
+  //add headers
+  http.addHeader("Authorization", token);
+  http.addHeader("Content-Type", "application/json");
+  // Send HTTP POST request
+  String data = "{\"state\": \"" + value + "\"}";
+  int httpResponseCode = http.POST(data);
+  http.end();
+  return httpResponseCode;
+}
+~~~
+  
