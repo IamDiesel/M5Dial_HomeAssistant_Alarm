@@ -2,11 +2,12 @@
  * @file StickCP2HA
  * @author D. K.
  * @brief StickCP2 Home Assistant Reading and writing HA Entities via HA REST API. Starting alarm when armed and BT-Beacon Entity is over -130 dB
- * @version 0.2
+ * @version 0.3
  * @date 2025-04-08
  *
  *
  * @Hardwares: StickCP2
+ TODO: Refactor Code :D
  */
 
 #include "M5StickCPlus2.h"
@@ -18,10 +19,12 @@
 
 unsigned long lastTime = 0;
 unsigned long timerDelay = 2000;
-String sensorReadings;
+String sensorReadings ="";
 String lolaBeaconNotifyHAss = "";
 String lolaBeaconSignalDBHass = "";
-String serverName = "http://192.168.2.43:8123/api/states/input_number.bluecat_received_signal_strength";
+String wifiLine = "";
+//String serverName = "http://192.168.2.43:8123/api/states/input_number.bluecat_received_signal_strength";
+bool useProxy = true;
 /*Definition of states
 OFF_NO_ALARM->Notify is off
 ON_GONE: Notify is on, kippy beacon not in range
@@ -40,15 +43,51 @@ enum State restoreState = OFF_NO_ALARM;
 int i = 0;
 int soundCount = 0;
 int master_volume = 120;
-//long encoder_oldPosition = -999;
 int battery = 0;
 bool settingDisplayIsBright = true;
-
 int status = 0;
+
+int connectWifi()
+{
+    lastTime = millis();    
+    WiFi.begin(proxySSID, proxyPassword);
+    StickCP2.Display.drawString("CON. WIFI PROXY",StickCP2.Display.width() / 2,StickCP2.Display.height() *1/2);
+    while(WiFi.status() != WL_CONNECTED && (millis() - lastTime) < (timerDelay*4)) 
+    {
+        delay(500);
+        StickCP2.Display.drawString(".",StickCP2.Display.width() / 3+(i++*5),StickCP2.Display.height() *2/3);
+    }
+    i=0;
+    status = WiFi.status();
+    if(status != WL_CONNECTED)
+    {
+        StickCP2.Display.clear();
+        lastTime = millis();    
+        WiFi.begin(ssid, password);
+        StickCP2.Display.drawString("CON. WIFI HOME",StickCP2.Display.width() / 2,StickCP2.Display.height() *1/2);
+        while(WiFi.status() != WL_CONNECTED && (millis() - lastTime) < (timerDelay*4)) 
+        {
+            delay(500);
+            StickCP2.Display.drawString(".",StickCP2.Display.width() / 3+(i++*5),StickCP2.Display.height() *2/3);
+        }
+        i=0;
+        status = WiFi.status();
+        useProxy = false;
+    }
+    StickCP2.Display.clear();
+    if(status != WL_CONNECTED)
+    {
+        StickCP2.Display.drawString("CON FAILED",StickCP2.Display.width() / 3,StickCP2.Display.height() *1/2);
+        delay(2000);
+        StickCP2.Display.clear();
+    }
+        
+    return status;
+}
+
 void setup() {
     auto cfg = M5.config();
     Serial.begin(115200);
-    Serial.println("Setup complete");
     StickCP2.begin(cfg);
     StickCP2.Power.begin();
     StickCP2.Display.setRotation(1);
@@ -56,13 +95,7 @@ void setup() {
     StickCP2.Display.setTextDatum(middle_center);
     StickCP2.Display.setTextFont(&fonts::Orbitron_Light_24);
     StickCP2.Display.setTextSize(1);
-    WiFi.begin(ssid, password);
-    while(WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        StickCP2.Display.drawString(".",StickCP2.Display.width() / 3+(i++*5),StickCP2.Display.height() *1/2);
-    }
-    i=0;
-    status = WiFi.status();
+    status = connectWifi();
     StickCP2.Display.clear();
     StickCP2.Display.drawString(std::to_string(status).c_str(),StickCP2.Display.width() / 2, StickCP2.Display.height() *1/ 4);
     StickCP2.Display.drawString(WiFi.localIP().toString().c_str(),StickCP2.Display.width() / 2, StickCP2.Display.height() *2 / 4);
@@ -169,6 +202,13 @@ void drawBattery()
     battery = lvl;
     //StickCP2.Display.printf("%");
 }
+void drawWIFIStatus()
+{
+    StickCP2.Display.setTextColor(YELLOW);
+    StickCP2.Display.setTextSize(0.7);
+    StickCP2.Display.drawString(wifiLine.c_str(), StickCP2.Display.width() *5 / 6,StickCP2.Display.height() / 10);
+
+}
 void empty_battery_notification()
 {
     static unsigned long last_battery_beep = 0;
@@ -186,21 +226,35 @@ void empty_battery_notification()
 }
 void drawInfoBar()
 {
+    drawWIFIStatus();
     drawBattery();
 }
 
-String httpGETRequest(const char* serverName) {
+String httpGETRequest(String serverName) {
   WiFiClient client;
   HTTPClient http;
   String payload = "{}"; 
-  //Serial.println("httpGETRequest Start");
-  if(http.begin(client, serverName)==-1)
+
+
+  if(useProxy)
   {
-    //Serial.println("httpGETRequest failed.");
-    //http.end();
-    return payload;
+        http.setRedirectLimit(5);
+
+        //if(http.begin(client, proxyServerName+newServerName)==-1)
+        if(http.begin(client, proxyServer, proxyPort, serverName, true)==-1)
+            return payload;
+        //http.setURL(serverName);
   }
-    
+  else
+  {
+      if(http.begin(client, serverName)==-1)
+        {
+            //Serial.println("httpGETRequest failed.");
+            //http.end();
+            return payload;
+        }
+  }
+   
   //add headers
   http.addHeader("Authorization", token);
   http.addHeader("Content-Type", "application/json");
@@ -214,18 +268,32 @@ String httpGETRequest(const char* serverName) {
 
   // Free resources
   http.end();
-
   return payload;
 }
-int httpPostState(const char* serverName, String value) {
+int httpPostState(String serverName, String value) {
   WiFiClient client;
   HTTPClient http;
-  if(http.begin(client, serverName) == -1)
+
+    if(useProxy)
     {
-        //http.end();
-        //Serial.println("httpPost failed.");
-        return -1;
+        if(http.begin(client, proxyServer, proxyPort, serverName, true)==-1)
+        {
+            //http.end();
+            //Serial.println("httpPost failed.");
+            return -1;
+        }
+        //http.setURL(serverName);
     }
+    else
+    {
+        if(http.begin(client, serverName) == -1)
+        {
+            //http.end();
+            //Serial.println("httpPost failed.");
+            return -1;
+        }
+    }
+
   //add headers
   http.addHeader("Authorization", token);
   http.addHeader("Content-Type", "application/json");
@@ -267,7 +335,7 @@ void loop(){
     bool buttonAReleased = false;
     bool buttonBReleased = false;
     bool buttonPReleased = false;
-    String wifiLine = "";
+    static bool isOddWifiCycle = true;
     //******************
     //update inputs
     //******************
@@ -277,15 +345,23 @@ void loop(){
         {
             lolaBeaconNotifyHAss = getHAssEntityStateValueAsString("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active");
             lolaBeaconSignalDBHass = getHAssEntityStateValueAsString("http://192.168.2.43:8123/api/states/input_number.bluecat_received_signal_strength");
-            wifiLine = "Connected";
+            if(useProxy && isOddWifiCycle)
+                wifiLine = "PRXY\\";
+            else if(useProxy && !isOddWifiCycle)
+                wifiLine = "PRXY/";
+            else if(!useProxy && isOddWifiCycle)
+                wifiLine = "HOME\\";
+            else if(!useProxy && !isOddWifiCycle)
+                wifiLine = "HOME/";           
         }
         else 
         {
-            wifiLine="WiFi Disconnected";
+            wifiLine="NO WIFI";
         }
+        isOddWifiCycle = !isOddWifiCycle;
         lastTime = millis();
         StickCP2.Display.clear();
-        drawBattery();
+        drawInfoBar();
     }
     buttonAPressed = StickCP2.BtnA.wasClicked();
     buttonBPressed = StickCP2.BtnB.wasClicked();
@@ -308,7 +384,6 @@ void loop(){
                         //Transition actions:
                         httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","on");
                         StickCP2.Display.clear();
-                        //drawBattery();
                         drawScreenOffActivated();
                         delay(2000);
                     }
@@ -388,9 +463,7 @@ void loop(){
     }
     if(nextState != curState)
         StickCP2.Display.clear();
-        //drawBattery();
     curState = nextState;
-    //elay(100);
 
 
     //******************

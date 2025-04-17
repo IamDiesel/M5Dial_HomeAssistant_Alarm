@@ -5,7 +5,7 @@
  * @version 0.2
  * @date 2025-04-08
  *
- *
+ * M5SickCPlus2 EEPROM Memory: https://github.com/m5stack/M5StickC-Plus/blob/90cb1bc192d5a4fb6d801191da56e84e0b2f85ad/examples/Advanced/Storage/EEPROM/EEPROM.ino#L9
  * @Hardwares: M5Dial
  */
 
@@ -18,10 +18,15 @@
 
 unsigned long lastTime = 0;
 unsigned long timerDelay = 2000;
-String sensorReadings;
+String sensorReadings = "";
 String lolaBeaconNotifyHAss = "";
 String lolaBeaconSignalDBHass = "";
-String serverName = "http://192.168.2.43:8123/api/states/input_number.bluecat_received_signal_strength";
+String wifiLine = "";
+
+//String proxyServerName = "http://192.168.192.3:8080:http://192.168.2.43:8123/api/states/input_number.bluecat_received_signal_strength";
+
+//https://forum.arduino.cc/t/get-request-through-proxy-connection/154978
+bool useProxy = true;
 /*Definition of states
 OFF->Notify is off
 ON_GONE: Notify is on, kippy beacon not in range
@@ -39,30 +44,63 @@ int i = 0;
 int soundCount = 0;
 int master_volume = 128;
 long encoder_oldPosition = -999;
-
 int status = 0;
+
+//first try = connect to proxy, if no proxy --> connect to "normal" wifi
+//returns wifi status
+int connectWifi()
+{
+    lastTime = millis();    
+    WiFi.begin(proxySSID, proxyPassword);
+    M5Dial.Display.drawString("CON WIFI PRXY",M5Dial.Display.width() / 3-30,M5Dial.Display.height() *1/2);
+    while(WiFi.status() != WL_CONNECTED && (millis() - lastTime) < (timerDelay*4)) 
+    {
+        delay(500);
+        M5Dial.Display.drawString(".",M5Dial.Display.width() / 3+(i++*5),M5Dial.Display.height() *2/3);
+    }
+    i=0;
+    status = WiFi.status();
+    if(status != WL_CONNECTED)
+    {
+        M5Dial.Display.clear();
+        lastTime = millis();    
+        WiFi.begin(ssid, password);
+        M5Dial.Display.drawString("CON WIFI NRML",M5Dial.Display.width() / 3-30,M5Dial.Display.height() *1/2);
+        while(WiFi.status() != WL_CONNECTED && (millis() - lastTime) < (timerDelay*4)) 
+        {
+            delay(500);
+            M5Dial.Display.drawString(".",M5Dial.Display.width() / 3+(i++*5),M5Dial.Display.height() *2/3);
+        }
+        i=0;
+        status = WiFi.status();
+        useProxy = false;
+    }
+    M5Dial.Display.clear();
+    if(status != WL_CONNECTED)
+    {
+        M5Dial.Display.drawString("CON FAILED",M5Dial.Display.width() / 3-30,M5Dial.Display.height() *1/2);
+        delay(2000);
+        M5Dial.Display.clear();
+    }
+        
+
+    return status;
+}
+
 void setup() {
     auto cfg = M5.config();
     Serial.begin(115200);
-    Serial.println("Setup complete");
     M5Dial.begin(cfg, true, false);
     M5Dial.Display.setTextColor(GREEN);
     M5Dial.Display.setTextDatum(middle_center);
     M5Dial.Display.setTextFont(&fonts::Orbitron_Light_32);
     M5Dial.Display.setTextSize(1);
-    WiFi.begin(ssid, password);
-    while(WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        M5Dial.Display.drawString(".",M5Dial.Display.width() / 3+(i++*5),M5Dial.Display.height() *1/2);
-    }
-    i=0;
-    status = WiFi.status();
+    status = connectWifi();
     M5Dial.Display.clear();
     M5Dial.Display.drawString(std::to_string(status).c_str(),M5Dial.Display.width() / 2, M5Dial.Display.height() *1/ 4);
     M5Dial.Display.drawString(WiFi.localIP().toString().c_str(),M5Dial.Display.width() / 2, M5Dial.Display.height() *2 / 4);
     delay(2000);
     M5Dial.Encoder.write(long(master_volume));
-    M5Dial.Display.clear();
     Serial.println("Setup complete");
 }
 
@@ -77,7 +115,9 @@ void drawScreenOff(){
     M5Dial.Display.setTextSize(1);
     M5Dial.Display.drawString("Notify\n[Off]", M5Dial.Display.width() / 2,M5Dial.Display.height() / 2);
     M5Dial.Display.setTextSize(0.5);
-    M5Dial.Display.drawString("Press BTN to Activate",M5Dial.Display.width() / 2, M5Dial.Display.height() * 5 / 8);   
+    M5Dial.Display.drawString("Press BTN to Activate",M5Dial.Display.width() / 2, M5Dial.Display.height() * 5 / 8);
+    M5Dial.Display.drawString(lolaBeaconNotifyHAss, M5Dial.Display.width() / 2, M5Dial.Display.height() * 6 / 8);
+    M5Dial.Display.drawString(lolaBeaconSignalDBHass, M5Dial.Display.width() / 2,M5Dial.Display.height() * 7 / 8);   
 }
 void drawScreenOffActivated(){
     M5Dial.Display.setTextColor(GREEN);
@@ -141,19 +181,43 @@ void drawPopupScreenVolume()
     M5Dial.Display.setTextSize(0.4);
     M5Dial.Display.drawString("Volume", M5Dial.Display.width() / 2,M5Dial.Display.height() / 10 *2);
 }
+void drawWIFIStatus()
+{
+    M5Dial.Display.setTextColor(YELLOW);
+    M5Dial.Display.setTextSize(0.4);
+    M5Dial.Display.drawString(wifiLine.c_str(), M5Dial.Display.width() / 2,M5Dial.Display.height() / 10 *2);
 
-String httpGETRequest(const char* serverName) {
+}
+void drawInfoBar()
+{
+    drawWIFIStatus();
+}
+
+String httpGETRequest(String serverName) {
   WiFiClient client;
   HTTPClient http;
   String payload = "{}"; 
-  //Serial.println("httpGETRequest Start");
-  if(http.begin(client, serverName)==-1)
+
+
+  if(useProxy)
   {
-    //Serial.println("httpGETRequest failed.");
-    //http.end();
-    return payload;
+        http.setRedirectLimit(5);
+
+        //if(http.begin(client, proxyServerName+newServerName)==-1)
+        if(http.begin(client, proxyServer, proxyPort, serverName, true)==-1)
+            return payload;
+        //http.setURL(serverName);
   }
-    
+  else
+  {
+      if(http.begin(client, serverName)==-1)
+        {
+            //Serial.println("httpGETRequest failed.");
+            //http.end();
+            return payload;
+        }
+  }
+   
   //add headers
   http.addHeader("Authorization", token);
   http.addHeader("Content-Type", "application/json");
@@ -167,18 +231,32 @@ String httpGETRequest(const char* serverName) {
 
   // Free resources
   http.end();
-
   return payload;
 }
-int httpPostState(const char* serverName, String value) {
+int httpPostState(String serverName, String value) {
   WiFiClient client;
   HTTPClient http;
-  if(http.begin(client, serverName) == -1)
+
+    if(useProxy)
     {
-        //http.end();
-        //Serial.println("httpPost failed.");
-        return -1;
+        if(http.begin(client, proxyServer, proxyPort, serverName, true)==-1)
+        {
+            //http.end();
+            //Serial.println("httpPost failed.");
+            return -1;
+        }
+        //http.setURL(serverName);
     }
+    else
+    {
+        if(http.begin(client, serverName) == -1)
+        {
+            //http.end();
+            //Serial.println("httpPost failed.");
+            return -1;
+        }
+    }
+
   //add headers
   http.addHeader("Authorization", token);
   http.addHeader("Content-Type", "application/json");
@@ -213,7 +291,8 @@ void loop(){
     int statusCode = 0;
     M5Dial.update();
     bool buttonPressed = false;
-    String wifiLine = "";
+    static bool isOddWifiCycle = true;
+
     //******************
     //update inputs
     //******************
@@ -223,14 +302,23 @@ void loop(){
         {
             lolaBeaconNotifyHAss = getHAssEntityStateValueAsString("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active");
             lolaBeaconSignalDBHass = getHAssEntityStateValueAsString("http://192.168.2.43:8123/api/states/input_number.bluecat_received_signal_strength");
-            wifiLine = "Connected";
+            if(useProxy && isOddWifiCycle)
+                wifiLine = "PRXY\\";
+            else if(useProxy && !isOddWifiCycle)
+                wifiLine = "PRXY/";
+            else if(!useProxy && isOddWifiCycle)
+                wifiLine = "HOME\\";
+            else if(!useProxy && !isOddWifiCycle)
+                wifiLine = "HOME/";           
         }
         else 
         {
-            wifiLine="WiFi Disconnected";
+            wifiLine="NO WIFI";
         }
         lastTime = millis();
         M5Dial.Display.clear();
+        drawInfoBar();
+        isOddWifiCycle = !isOddWifiCycle;
     }
     buttonPressed = M5Dial.BtnA.wasPressed();
 
