@@ -34,7 +34,9 @@ enum State {
   OFF_NO_ALARM,
   ON_GONE,
   ON_HOME,
-  OFF_DISPLAY
+  OFF_DISPLAY,
+  ERROR,
+  ERROR_NO_BEEP
 };
 enum State curState = OFF_NO_ALARM;
 enum State nextState = OFF_NO_ALARM;
@@ -181,6 +183,23 @@ void drawScreenWifi(String textline)
     StickCP2.Display.setTextColor(SILVER);
     StickCP2.Display.drawString(textline.c_str(),StickCP2.Display.width() / 2, StickCP2.Display.height() *3 / 4);
 }
+void drawErrorScreen(bool beep)
+{
+    StickCP2.Power.setLed(255);
+    StickCP2.Display.setTextColor(RED);
+    StickCP2.Display.setTextSize(1);
+    StickCP2.Display.drawString("ERROR",StickCP2.Display.width() / 2, StickCP2.Display.height() *1/ 4);
+    StickCP2.Display.setTextSize(0.6);
+    StickCP2.Display.drawString("Home Assistant unreachable",StickCP2.Display.width() / 2, StickCP2.Display.height() *1/ 2);
+    //StickCP2.Display.setTextSize(0.4);
+    StickCP2.Display.drawString("If error persists:",StickCP2.Display.width() / 2, StickCP2.Display.height() *5 / 8);
+    StickCP2.Display.drawString("Try rebooting HAss",StickCP2.Display.width() / 2, StickCP2.Display.height() *7 / 8);
+    if(beep)
+    {
+        StickCP2.Speaker.tone(2000, 100);
+        //delay(700);
+    }
+}
 void drawPopupScreenVolume()
 {
     StickCP2.Display.clear();
@@ -233,7 +252,7 @@ void drawInfoBar()
 String httpGETRequest(String serverName) {
   WiFiClient client;
   HTTPClient http;
-  String payload = "{}"; 
+  String payload = "{\"state\":\"502\"}"; 
 
 
   if(useProxy)
@@ -258,11 +277,12 @@ String httpGETRequest(String serverName) {
   //add headers
   http.addHeader("Authorization", token);
   http.addHeader("Content-Type", "application/json");
-  // Send HTTP POST request
+  // GET request
   int httpResponseCode = http.GET();
 
   
   if (httpResponseCode>0) {
+    Serial.println(httpResponseCode);
     payload = http.getString();
   }
 
@@ -301,6 +321,7 @@ int httpPostState(String serverName, String value) {
   String data = "{\"state\": \"" + value + "\"}";
   int httpResponseCode = http.POST(data);
   http.end();
+  Serial.print("POST:"+String(httpResponseCode));
   return httpResponseCode;
 }
 String getHAssEntityStateValue(const char* serverName)
@@ -336,6 +357,7 @@ void loop(){
     bool buttonBReleased = false;
     bool buttonPReleased = false;
     static bool isOddWifiCycle = true;
+    static int httpStatusCode = 200;
     //******************
     //update inputs
     //******************
@@ -382,7 +404,12 @@ void loop(){
                     {
                         nextState = ON_GONE;
                         //Transition actions:
-                        httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","on");
+                        httpStatusCode = httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","on");
+                        if(httpStatusCode != 200)
+                        {
+                            nextState = ERROR;
+                            restoreState = OFF_NO_ALARM;
+                        }
                         StickCP2.Display.clear();
                         drawScreenOffActivated();
                         delay(2000);
@@ -408,7 +435,12 @@ void loop(){
                     if(buttonAPressed)                                                                                                      //if user presses button                         --> OFF_NO_ALARM
                     {
                         nextState = OFF_NO_ALARM;
-                        httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
+                        httpStatusCode = httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
+                        if(httpStatusCode != 200)
+                        {
+                            nextState = ERROR;
+                            restoreState = ON_GONE;
+                        }
                     }
                     if(buttonBHold == true)
                     {
@@ -434,8 +466,13 @@ void loop(){
                     if(buttonAPressed)                                                                                                       //if user presses button                         --> OFF_NO_ALARM
                     {
                         nextState = OFF_NO_ALARM;
-                        httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
+                        httpStatusCode = httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
                         StickCP2.Power.setLed(0);
+                        if(httpStatusCode != 200)
+                        {
+                            nextState = ERROR;
+                            restoreState = ON_HOME;
+                        }
                     }
                     if(buttonBHold == true)
                     {
@@ -458,8 +495,33 @@ void loop(){
                         StickCP2.Display.setBrightness(255);
                     }
                     break;
+        case ERROR:
+                    nextState = ERROR;
+                    httpStatusCode = httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
+                    if(lolaBeaconNotifyHAss != "502" && httpStatusCode == 200)
+                        nextState = restoreState;
+                    Serial.println("Error: "+String(httpStatusCode)+" " +lolaBeaconNotifyHAss);
+                    drawErrorScreen(true);
+                    if(buttonBHold || buttonBPressed || buttonAPressed)
+                        nextState = ERROR_NO_BEEP;
+                    break;
+        case ERROR_NO_BEEP:
+                    nextState = ERROR_NO_BEEP;
+                    httpStatusCode = httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
+                    if(lolaBeaconNotifyHAss != "502" && httpStatusCode == 200)
+                        nextState = restoreState;
+                    Serial.println("Error: "+String(httpStatusCode)+" " +lolaBeaconNotifyHAss);
+                    drawErrorScreen(false);
+                    break;
         default:
                     break;
+    }
+    if(lolaBeaconNotifyHAss == "502" || lolaBeaconNotifyHAss == "" || httpStatusCode!= 200)
+    {
+        if(curState == ERROR_NO_BEEP || nextState == ERROR_NO_BEEP)
+            nextState = ERROR_NO_BEEP;
+        else
+            nextState = ERROR;
     }
     if(nextState != curState)
         StickCP2.Display.clear();
