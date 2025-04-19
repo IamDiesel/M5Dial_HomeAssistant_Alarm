@@ -7,6 +7,7 @@ From M5Dial M5Stick set button value in Home Assistant and poll sensor value tha
 
 # Commissioning
 * Follow steps from M5 Arduino tutorial https://docs.m5stack.com/en/arduino/arduino_ide
+* Libraries needed: M5StickCPlus2 (or M5Dial depending on the device used), HttpClient (https://github.com/amcewen/HttpClient), Arduino_JSON
 
 # Additional Information
 * Home Assistant REST API: https://developers.home-assistant.io/docs/api/rest/
