@@ -44,7 +44,7 @@ enum State restoreState = OFF_NO_ALARM;
 
 int i = 0;
 int soundCount = 0;
-int master_volume = 120;
+int master_volume = 160;
 int battery = 0;
 bool settingDisplayIsBright = true;
 int status = 0;
@@ -106,7 +106,25 @@ void setup() {
     StickCP2.Display.clear();
     Serial.println("Setup complete");
 }
-
+//beepInterval+toneDuration in ms
+void beepAndBlink(int beepInterval, int toneFrequency, int toneDuration, bool blink)
+{
+    static unsigned long last_beep = 0;
+    static bool toggleLED = true;
+    if ((millis() - last_beep) > beepInterval)
+    {
+            last_beep = millis();
+            StickCP2.Speaker.tone(toneFrequency, toneDuration);
+            if(blink)
+            {
+                if(toggleLED)
+                    StickCP2.Power.setLed(255);
+                else
+                    StickCP2.Power.setLed(0);
+                toggleLED = !toggleLED;
+            }
+    }
+}
 void drawScreenOff(int statusCode){
     StickCP2.Display.setTextColor(GREEN);
     StickCP2.Display.setTextSize(1);
@@ -185,21 +203,24 @@ void drawScreenWifi(String textline)
 }
 void drawErrorScreen(bool beep)
 {
-    StickCP2.Power.setLed(255);
+    
+    StickCP2.Display.setBrightness(255);
     StickCP2.Display.setTextColor(RED);
     StickCP2.Display.setTextSize(1);
-    StickCP2.Display.drawString("ERROR",StickCP2.Display.width() / 2, StickCP2.Display.height() *1/ 4);
+    StickCP2.Display.drawString("ERROR",StickCP2.Display.width() / 2, StickCP2.Display.height() *2/ 8);
     StickCP2.Display.setTextSize(0.6);
-    StickCP2.Display.drawString("Home Assistant unreachable",StickCP2.Display.width() / 2, StickCP2.Display.height() *1/ 2);
+    StickCP2.Display.drawString("Home Assistant unreachable",StickCP2.Display.width() / 2, StickCP2.Display.height() *3/ 8);
     //StickCP2.Display.setTextSize(0.4);
+    StickCP2.Display.setTextSize(0.6);
     StickCP2.Display.drawString("If error persists:",StickCP2.Display.width() / 2, StickCP2.Display.height() *5 / 8);
-    StickCP2.Display.drawString("Try rebooting HAss",StickCP2.Display.width() / 2, StickCP2.Display.height() *7 / 8);
+    StickCP2.Display.drawString("1) Check Proxy / WiFi AP",StickCP2.Display.width() / 2, StickCP2.Display.height() *6 / 8);
+    StickCP2.Display.drawString("2) Reboot Home Assistant",StickCP2.Display.width() / 2, StickCP2.Display.height() *7 / 8);
     if(beep)
     {
-        StickCP2.Speaker.tone(2000, 100);
-        //delay(700);
+        beepAndBlink(1000,2000,100,true);
     }
 }
+
 void drawPopupScreenVolume()
 {
     StickCP2.Display.clear();
@@ -399,17 +420,13 @@ void loop(){
     switch(curState)
     {
         case OFF_NO_ALARM:
+                    restoreState = OFF_NO_ALARM;
                     drawScreenOff(); //state action
                     if(buttonAPressed)                                                                                                     //If user presses button                      --> ON_GONE
                     {
                         nextState = ON_GONE;
                         //Transition actions:
                         httpStatusCode = httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","on");
-                        if(httpStatusCode != 200)
-                        {
-                            nextState = ERROR;
-                            restoreState = OFF_NO_ALARM;
-                        }
                         StickCP2.Display.clear();
                         drawScreenOffActivated();
                         delay(2000);
@@ -419,16 +436,16 @@ void loop(){
                     if(buttonBHold == true)
                     {
                         nextState = OFF_DISPLAY;
-                        restoreState = OFF_NO_ALARM;
                         StickCP2.Display.setBrightness(0);
                     }
                         
                     break;
         case ON_GONE:
+                    restoreState = ON_GONE;
                     drawScreenOnGone(); //state action
                     if(lolaBeaconSignalDBHass.toInt() > -130 && lolaBeaconSignalDBHass.toInt() < -60 && lolaBeaconNotifyHAss.equals("on")) //If beacon is in range and notify is on         --> ON_HOME
                         nextState = ON_HOME;
-                    else if(lolaBeaconNotifyHAss.equals("on") == false)                                                                    //if notify is off                               --> OFF_NO_ALARM              
+                    else if(lolaBeaconNotifyHAss.equals("off"))                                                                              //if notify is off                               --> OFF_NO_ALARM              
                         nextState = OFF_NO_ALARM;
                     else if(lolaBeaconSignalDBHass.toInt() <= -130 && lolaBeaconNotifyHAss.equals("on"))                                   //if beacon is not in range and notify is on     --> ON_GONE  (stay)                            
                         nextState = ON_GONE;
@@ -436,24 +453,19 @@ void loop(){
                     {
                         nextState = OFF_NO_ALARM;
                         httpStatusCode = httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
-                        if(httpStatusCode != 200)
-                        {
-                            nextState = ERROR;
-                            restoreState = ON_GONE;
-                        }
                     }
                     if(buttonBHold == true)
                     {
-                        nextState = OFF_DISPLAY;
-                        restoreState = ON_GONE;
+                        nextState = OFF_DISPLAY;  
                         StickCP2.Display.setBrightness(0);
                     }
                     break;
         case ON_HOME:
+                    restoreState = ON_HOME;
                     drawScreenOnHome(); //state action
                     if(lolaBeaconSignalDBHass.toInt() > -130 && lolaBeaconNotifyHAss.equals("on"))                                          //If beacon is in range and notify is on         --> ON_HOME (stay)                                       
                         nextState = ON_HOME;
-                    else if(lolaBeaconNotifyHAss.equals("on") == false)                                                                     //if notify is off                               --> OFF_NO_ALARM
+                    else if(lolaBeaconNotifyHAss.equals("off"))                                                                     //if notify is off                               --> OFF_NO_ALARM
                     {
                         nextState = OFF_NO_ALARM;
                         StickCP2.Power.setLed(0);
@@ -468,16 +480,10 @@ void loop(){
                         nextState = OFF_NO_ALARM;
                         httpStatusCode = httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
                         StickCP2.Power.setLed(0);
-                        if(httpStatusCode != 200)
-                        {
-                            nextState = ERROR;
-                            restoreState = ON_HOME;
-                        }
                     }
                     if(buttonBHold == true)
                     {
                         nextState = OFF_DISPLAY;
-                        restoreState = ON_HOME;
                         StickCP2.Display.setBrightness(0);
                     }
                     break;
@@ -497,9 +503,14 @@ void loop(){
                     break;
         case ERROR:
                     nextState = ERROR;
-                    httpStatusCode = httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
+
+                    httpStatusCode = httpPostState("http://192.168.2.43:8123/api/states/input_boolean.poll_me","off");
                     if(lolaBeaconNotifyHAss != "502" && httpStatusCode == 200)
+                    {
+                        StickCP2.Display.setBrightness(255);
+                        StickCP2.Power.setLed(0);
                         nextState = restoreState;
+                    }
                     Serial.println("Error: "+String(httpStatusCode)+" " +lolaBeaconNotifyHAss);
                     drawErrorScreen(true);
                     if(buttonBHold || buttonBPressed || buttonAPressed)
@@ -507,9 +518,13 @@ void loop(){
                     break;
         case ERROR_NO_BEEP:
                     nextState = ERROR_NO_BEEP;
-                    httpStatusCode = httpPostState("http://192.168.2.43:8123/api/states/input_boolean.bluecat_kippy_gps_active","off");
+                    httpStatusCode = httpPostState("http://192.168.2.43:8123/api/states/input_boolean.poll_me","off");
                     if(lolaBeaconNotifyHAss != "502" && httpStatusCode == 200)
+                    {
+                        StickCP2.Display.setBrightness(255);
+                        StickCP2.Power.setLed(0);
                         nextState = restoreState;
+                    }
                     Serial.println("Error: "+String(httpStatusCode)+" " +lolaBeaconNotifyHAss);
                     drawErrorScreen(false);
                     break;
