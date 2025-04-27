@@ -182,4 +182,9 @@ int httpPostState(String serverName, String value) {
   return httpResponseCode;
 }
 ~~~
+![image](https://github.com/user-attachments/assets/edcb0506-967f-4097-8d15-32afb4c67b49)
+![image](https://github.com/user-attachments/assets/544d6464-7883-4b38-a702-caf6924e4d8a)
+![image](https://github.com/user-attachments/assets/738359cd-bb66-4a58-9662-2744a03c24db)
+
+
   
