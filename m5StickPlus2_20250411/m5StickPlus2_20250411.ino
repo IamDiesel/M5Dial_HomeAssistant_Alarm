@@ -7,7 +7,6 @@
  *
  *
  * @Hardwares: StickCP2
- TODO: Refactor Code :D
  */
 
 #include "M5StickCPlus2.h"
@@ -17,18 +16,23 @@
 #include <string.h>
 #include "secrets.h"
 
+#define BAD_GATEWAY 502
+
 unsigned long lastTime = 0;
 unsigned long timerDelay = 2000;
 String sensorReadings ="";
 String lolaBeaconNotifyHAss = "";
 String lolaBeaconSignalDBHass = "";
 String wifiLine = "";
-//String serverName = "http://192.168.2.43:8123/api/states/input_number.bluecat_received_signal_strength";
 bool useProxy = true;
+
 /*Definition of states
 OFF_NO_ALARM->Notify is off
 ON_GONE: Notify is on, kippy beacon not in range
 On_HOME: Notify is on, kippy beacon is in range
+OFF_DISPALY: Display brightness is turned to zero, pressing a key will return to the previous state
+ERROR: HAss can not be reached, error alarm is turned on
+ERROR_NO_BEEP: HAss can not be reached, error alarm is turned off
 */
 enum State {
   OFF_NO_ALARM,
@@ -98,10 +102,32 @@ void setup() {
     StickCP2.Display.setTextFont(&fonts::Orbitron_Light_24);
     StickCP2.Display.setTextSize(1);
     status = connectWifi();
+    String statusString = "None";
+    switch(status)
+    {
+        case    WL_NO_SHIELD: statusString="No Shield";break;
+        case    WL_IDLE_STATUS: statusString="Idle Status";break;
+        case    WL_NO_SSID_AVAIL: statusString="No SSID avail.";break;
+        case    WL_SCAN_COMPLETED: statusString="Scan complete";break;
+        case    WL_CONNECTED: statusString="Connected.";break;
+        case    WL_CONNECT_FAILED: statusString="Connect failed";break;
+        case    WL_CONNECTION_LOST: statusString="Conneciton lost";break;
+        case    WL_DISCONNECTED: statusString="Disconnected";break;
+        default: break;
+    }
+    StickCP2.Display.setTextSize(0.7);
     StickCP2.Display.clear();
-    StickCP2.Display.drawString(std::to_string(status).c_str(),StickCP2.Display.width() / 2, StickCP2.Display.height() *1/ 4);
-    StickCP2.Display.drawString(WiFi.localIP().toString().c_str(),StickCP2.Display.width() / 2, StickCP2.Display.height() *2 / 4);
-    delay(2000);
+    StickCP2.Display.drawString(("Status:"+statusString).c_str(),StickCP2.Display.width() / 2, StickCP2.Display.height() *1/ 4);
+    StickCP2.Display.drawString(("IP:"+WiFi.localIP().toString()).c_str(),StickCP2.Display.width() / 2, StickCP2.Display.height() *2 / 4);
+    StickCP2.Display.drawString(("GW:"+WiFi.gatewayIP().toString()).c_str(),StickCP2.Display.width() / 2, StickCP2.Display.height() *3 / 4);
+    StickCP2.Display.setTextSize(1.0);   
+    delay(5000);
+    proxyServer = WiFi.gatewayIP().toString();
+    //
+    //In order to make this work with EveryProxy: 
+    //A) Connect mobile phone to ethernet (Wireless, cellular, ..)
+    //B) Connect Twingate on mobile phone
+    //C) Start Every Proxy:  set the IP for the http proxy to the IP of the wireless hotspot (e.g. 192.168.230.244). Set Port 8080 and enable network bridge. Then enable the http proxy.
     //StickCP2.Encoder.write(long(master_volume));
     StickCP2.Display.clear();
     Serial.println("Setup complete");
@@ -210,7 +236,6 @@ void drawErrorScreen(bool beep)
     StickCP2.Display.drawString("ERROR",StickCP2.Display.width() / 2, StickCP2.Display.height() *2/ 8);
     StickCP2.Display.setTextSize(0.6);
     StickCP2.Display.drawString("Home Assistant unreachable",StickCP2.Display.width() / 2, StickCP2.Display.height() *3/ 8);
-    //StickCP2.Display.setTextSize(0.4);
     StickCP2.Display.setTextSize(0.6);
     StickCP2.Display.drawString("If error persists:",StickCP2.Display.width() / 2, StickCP2.Display.height() *5 / 8);
     StickCP2.Display.drawString("1) Check Proxy / WiFi AP",StickCP2.Display.width() / 2, StickCP2.Display.height() *6 / 8);
@@ -273,7 +298,7 @@ void drawInfoBar()
 String httpGETRequest(String serverName) {
   WiFiClient client;
   HTTPClient http;
-  String payload = "{\"state\":\"502\"}"; 
+  String payload = "{\"state\":\"BAD_GATEWAY\"}"; 
 
 
   if(useProxy)
@@ -382,6 +407,7 @@ void loop(){
     //******************
     //update inputs
     //******************
+    //read variables every <timerDelay> ms from Home Assistant
     if ((millis() - lastTime) > timerDelay) 
     {
         if(WiFi.status()== WL_CONNECTED)
@@ -406,13 +432,11 @@ void loop(){
         StickCP2.Display.clear();
         drawInfoBar();
     }
+    //read button presses
     buttonAPressed = StickCP2.BtnA.wasClicked();
-    buttonBPressed = StickCP2.BtnB.wasClicked();
-    //buttonPPressed = StickCP2.BtnPWR.wasSingleClicked();
-    
+    buttonBPressed = StickCP2.BtnB.wasClicked();  
     buttonAHold = StickCP2.BtnA.wasHold();
     buttonBHold = StickCP2.BtnB.wasHold();
-    //buttonAReleased = StickCP2.BtnA.was
 
     //******************
     //execute state actions, determine next State and execute transition actions
@@ -505,7 +529,7 @@ void loop(){
                     nextState = ERROR;
 
                     httpStatusCode = httpPostState("http://192.168.2.43:8123/api/states/input_boolean.poll_me","off");
-                    if(lolaBeaconNotifyHAss != "502" && httpStatusCode == 200)
+                    if(lolaBeaconNotifyHAss != "BAD_GATEWAY" && httpStatusCode == 200)
                     {
                         StickCP2.Display.setBrightness(255);
                         StickCP2.Power.setLed(0);
@@ -519,7 +543,7 @@ void loop(){
         case ERROR_NO_BEEP:
                     nextState = ERROR_NO_BEEP;
                     httpStatusCode = httpPostState("http://192.168.2.43:8123/api/states/input_boolean.poll_me","off");
-                    if(lolaBeaconNotifyHAss != "502" && httpStatusCode == 200)
+                    if(lolaBeaconNotifyHAss != "BAD_GATEWAY" && httpStatusCode == 200)
                     {
                         StickCP2.Display.setBrightness(255);
                         StickCP2.Power.setLed(0);
@@ -531,7 +555,8 @@ void loop(){
         default:
                     break;
     }
-    if(lolaBeaconNotifyHAss == "502" || lolaBeaconNotifyHAss == "" || httpStatusCode!= 200)
+    //Setting Error State
+    if(lolaBeaconNotifyHAss == "BAD_GATEWAY" || lolaBeaconNotifyHAss == "" || httpStatusCode!= 200)
     {
         if(curState == ERROR_NO_BEEP || nextState == ERROR_NO_BEEP)
             nextState = ERROR_NO_BEEP;
@@ -556,20 +581,7 @@ void loop(){
         }  
         drawPopupScreenVolume();
     }
-    /*if(buttonBHold == true)
-    {
-        if(settingDisplayIsBright)
-            StickCP2.Display.setBrightness(0);
-        else
-            StickCP2.Display.setBrightness(255);
-        settingDisplayIsBright = !settingDisplayIsBright;
-    }
-    if(buttonAPressed || buttonBPressed || curState == ON_HOME)
-    {
-        StickCP2.Display.setBrightness(255);
-        settingDisplayIsBright = true;
-    }*/
-    //check if battery is nearly empty and activate power LED / beep, if thats the case
+
     empty_battery_notification();
     
 }
